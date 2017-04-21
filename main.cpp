@@ -290,6 +290,9 @@ int main(int argc, char* argv[])
     targetp << -0.3, -0.45, -0.3, 0.3, 0.45, 0.3,
             -0.85, -0.85, -0.85, -0.85, -0.85, -0.85,
             -0.3, 0, 0.35, -0.65, -0.3, 0.65;
+
+
+    Feedbacks fb;
     StepPlanner planner;
 
     planner.initPlanner();
@@ -306,7 +309,7 @@ int main(int argc, char* argv[])
 
         while(1)
         {
-            planner.PlanUpdate();
+            planner.PlanUpdate(fb);
             cout<<"step Num:"<<i<< " swing leg 1: "<<planner.swingID[0]<<endl;
             planner.PlanRefTrajGeneration();
             //cout<<planner.currentConfig.LegPee<<endl;
@@ -315,7 +318,8 @@ int main(int argc, char* argv[])
             planner.PlanTrajModification();
             bool isFinished=planner.PlanStepFinishJudgement();
             cout<<"count"<<planner.getCount()<<endl;//bodyPee"<<planner.currentM.BodyPee<<endl;
-             if(isFinished==true)
+            planner.PlanPeriodDone();
+            if(isFinished==true)
                 break;
         }
     }

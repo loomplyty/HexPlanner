@@ -19,7 +19,7 @@ using namespace Eigen;
      Matrix4d s_euler2pm(const Vector3d& _euler, const char *eurType);
      Matrix4d s_pe2pm(const Vector3d& _p, const Vector3d& _euler, const char *eurType);
      Matrix3d s_skew(const Vector3d& _vec);
-
+     int sgn(const double& d);
 //     Matrix3d s_q2rm(const Vector4d& _quat);
 //     Matrix4d s_q2pm(const Vector4d& _quat);
     // Quaterniond s_rm2q(const Matrix3d& _rm);

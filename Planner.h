@@ -13,12 +13,14 @@ using namespace Eigen;
 const int LegPair1[3]{0,2,4};
 const int LegPair2[3]{1,5,3};
 
-struct RobotMotionStatus
+struct RobotMotionStatus// all w.r.t. the world coordinate system
 {
     Matrix<double,3,6> LegPee{Matrix<double,3,6>::Zero()};
     Vector3d BodyPee{Vector3d::Zero()};
     Matrix3d BodyR{Matrix3d::Identity()};
-    Vector3d BodyVee{Vector3d::Zero()};
+    double Yaw{0};
+    Vector3d COGVel{Vector3d::Zero()};// w.r.t. the world coordinate system
+    Vector3d COGPee{Vector3d::Zero()};
 };
 struct RobotForceStatus
 {
@@ -26,6 +28,21 @@ struct RobotForceStatus
     double TDThreshold{300};
     double TDActivate{100};
 };
+
+struct Feedbacks
+{
+    Matrix<double,3,6> legPee2B{Matrix<double,3,6>::Zero()};
+    Matrix<double,3,6> forceData{Matrix<double,3,6>::Zero()};
+    Vector3d imuData{Vector3d::Zero()};
+};
+
+struct CommandPlanar
+{
+    double Vx;
+    double Vy;
+    double Yaw;
+};
+
 
 enum LegState
 {
@@ -47,8 +64,9 @@ public:
     RobotMotionStatus targetM;
     RobotMotionStatus currentM;
     RobotMotionStatus lastM;
-    RobotForceStatus currentF;
 
+    RobotForceStatus currentF;
+    Feedbacks robotFB;
     int swingID[3]{0,2,4};
     int stanceID[3]{1,5,3};
 
@@ -63,14 +81,22 @@ private:
     int totalCount;
     bool isForceSensorApplied{false};
 public:
-    // one-time functions
+
+
+      // one-time functions
     void initPlanner();
     void initStep(int* _swingID, int* _stanceID);
     //setters
     void setInitConfig(const Matrix<double,3,6>& _initLegPee, const Vector3d & _initBodyPee, const Matrix3d& _initBodyR);
     void setTargetConfig(const Matrix<double,3,6>& _targetLegPee, const Vector3d & _targetBodyPee, const Matrix3d& _targetBodyR);
+    void setInitLegP(const Matrix<double,3,6>& _initLegPee);
+    void setTargetLegP(const Matrix<double,3,6>& _targetLegPee);
+    void setInitBodyP(const Vector3d& _initBodyP);
+    void setTargetBodyP(const Vector3d& _targetBodyP);
     void setInitBodyV(const Vector3d& _initBodyV);
     void setTargetBodyV(const Vector3d& _targetBodyV);
+    void setInitYaw(const double _initYaw);
+    void setTargetYaw(const double _targetYaw);
     void setStepHeight(const double H);
     void setStepPeriod(const double T);
     void setFeetForces(const Matrix<double,3,6>& _feetForces);
@@ -78,19 +104,24 @@ public:
     void setOffForceSensor();
     void setPlanFrequency(const double _freq);
 
+    void parseVelocityCommand(const CommandPlanar & cmd);
+
     //getters
     int getCount();
     // functions for each control loop
+
     // 0. count+=1
-    void PlanUpdate();
+    void PlanUpdate(const Feedbacks& _fb);
 
     // 1. Generate Reference Trajectory
+    //parse command..
     void PlanRefTrajGeneration();// a. field interactive traj b. steping over
     // 2. Detecting touch down
-    void PlanTouchDownJudgement();
+    void PlanTouchDownJudgement();// we need a function handler later to include various traj generation
     // 3. modify trajectory
     void PlanTrajModification();
     bool PlanStepFinishJudgement();
+    void PlanPeriodDone();
 
 };
 
@@ -100,6 +131,8 @@ Matrix3d PlanRbyQuatInterp(const Matrix3d& R0,const Matrix3d& R1,const int count
 Vector3d PlanTrajCubic(const Vector3d& p0, const Vector3d& p1, const Vector3d& v0, const Vector3d& v1,const int count, const int totalCount);
 void PlanTrajP2Inf(const Vector3d& p0, const Vector3d& v0,const Vector3d& vdesire,const int count, const int accCount,Vector3d& p, Vector3d& v);
 
+
+void PlanGetLocalSupportCenter(const Matrix<double,3,6>& legPee,int* stanceID,Vector3d& _LCSorigin, Matrix3d& _LCSR);
 
 
 
