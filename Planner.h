@@ -13,15 +13,20 @@ using namespace Eigen;
 const int LegPair1[3]{0,2,4};
 const int LegPair2[3]{1,5,3};
 
-struct RobotMotionStatus// all w.r.t. the world coordinate system
+struct RobotMotionStatus
 {
+    // w.r.t. the world coordinate system
     Matrix<double,3,6> LegPee{Matrix<double,3,6>::Zero()};
     Vector3d BodyPee{Vector3d::Zero()};
+    Vector3d BodyVee{Vector3d::Zero()};
     Matrix3d BodyR{Matrix3d::Identity()};
+
+    // w.r.t. the terrain coordinate system
     double Yaw{0};
-    Vector3d COGVel{Vector3d::Zero()};// w.r.t. the world coordinate system
-    Vector3d COGPee{Vector3d::Zero()};
+    Vector3d COGV{Vector3d::Zero()};
+    Vector3d COG{Vector3d::Zero()};
 };
+
 struct RobotForceStatus
 {
     Matrix<double,3,6> FootForce{Matrix<double,3,6>::Zero()};
@@ -75,11 +80,14 @@ public:
     RobotState robotState;
     int countPerPeriod{1};
     double stepHeight{0.05};
+    Matrix3d R_t1_2_t0{Matrix3d::Identity()};
+    Vector3d p_t1_2_t0{Vector3d(0,0,0)};
 private:
     int stepCount{0};
     int count{0};
     int totalCount;
     bool isForceSensorApplied{false};
+    Vector4d supportPlaneParams{Vector4d(0,1,0,0.85)};// default support plane and height in the World CS
 public:
 
 
@@ -131,10 +139,9 @@ Matrix3d PlanRbyQuatInterp(const Matrix3d& R0,const Matrix3d& R1,const int count
 Vector3d PlanTrajCubic(const Vector3d& p0, const Vector3d& p1, const Vector3d& v0, const Vector3d& v1,const int count, const int totalCount);
 void PlanTrajP2Inf(const Vector3d& p0, const Vector3d& v0,const Vector3d& vdesire,const int count, const int accCount,Vector3d& p, Vector3d& v);
 
-
-void PlanGetLocalSupportCenter(const Matrix<double,3,6>& legPee,int* stanceID,Vector3d& _LCSorigin, Matrix3d& _LCSR);
-
-
+void PlanGetT2B(const Matrix<double,3,6>& legPee,int* stanceID,Matrix3d & R_t_2_b,Vector3d& p_t_2_b );
+void PlaneGetPointProjection(const Vector3d& p, const Vector4d& planeABCD,Vector3d& projP);
+void PlanGetSupportPlane(const Matrix<double,3,6>& legPee,int* stanceID,Vector4d& planeABCD);
 
 
 

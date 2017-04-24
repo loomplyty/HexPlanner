@@ -22,7 +22,7 @@ void StepPlanner::initPlanner()
 }
 
 
-void StepPlanner::initStep(int* _swingID, int* _stanceID)// done when count == 0
+void StepPlanner::initStep(int* _swingID, int* _stanceID)// do it when count == 0
 {
     stepCount+=1;
     count=0;
@@ -40,28 +40,60 @@ void StepPlanner::initStep(int* _swingID, int* _stanceID)// done when count == 0
     robotState=ThreeStance;
 
 
-   // initialize motions
+}
+
+void StepPlanner::parseVelocityCommand(const CommandPlanar & cmd)
+{
+
+    //1.init motion from data of the last step
+
     initM.Yaw=0;
     initM.BodyPee.setZero();
     double bodyPitch=robotFB.imuData(1);//213 euler angles
     double bodyRoll=robotFB.imuData(2);
-    initM.BodyR=s_euler2rm(Vector3d(0,bodyPitch,bodyRoll),"213");
+    initM.BodyR=s_euler2rm(Vector3d(initM.Yaw,bodyPitch,bodyRoll),"213");
     for(int i=0;i<6;i++)
         initM.LegPee.col(i)=initM.BodyPee+initM.BodyR*robotFB.legPee2B.col(i);
-    initM.COGVel=s_roty2rm(-targetM.Yaw)*targetM.COGVel;//read information from the last step
-    initM.Yaw=0;
+
+    initM.BodyVee=R_t1_2_t0.inverse()*lastM.BodyVee;
+    initM.COGV=initM.BodyVee;
+
+    PlanGetSupportPlane(initM.LegPee,stanceID,supportPlaneParams);//planning w.r.t. the support plane, or it can just be (0,1,0,-0.85)
+    PlaneGetPointProjection(initM.BodyPee,supportPlaneParams,initM.COG);// assuming the cog is the all from the body
 
 
-    // need to calculate the cog projection to the support plane
+    //2. calc for target motion
+    Matrix<double, 3, 6> stdLegPee2C;
 
+    stdLegPee2C << -0.3, -0.45, -0.3, 0.3, 0.45, 0.3,
+                0,  0,  0,  0,  0,  0,
+            -0.65, 0, 0.65, -0.65, 0, 0.65;
 
+    //planning in the absolute world ground coordinate system
 
-    Matrix3d COG2G;
-    PlanGetLocalSupportCenter(initM.LegPee,stanceID,initM.COGPee,COG2G);
+    targetM.COGV=Vector3d(cmd.Vx,0,cmd.Vy);
+    targetM.BodyVee=targetM.COGV;
+    targetM.Yaw=cmd.Yaw;
+    Matrix3d R_t_2_b;
+    Vector3d p_t_2_b;
 
-    currentM=initM;
+    PlanGetT2B(initM.LegPee,stanceID,R_t_2_b,p_t_2_b);
+
+    Vector3d D=targetM.COGV*double(totalCount)/COUNT_PER_SEC;// should be larger than 0.5*
+    // or :Vector3d D=0.5*(initM.COGV+targetM.COGV)*double(totalCount)/COUNT_PER_SEC;
+    targetM.COG=initM.BodyR*(R_t_2_b*D/2+p_t_2_b);
+    targetM.BodyPee=targetM.COG+Vector3d(0,0.85,0);
+
+    //leg
+    Vector3d plannedSW2T[3];
+    for(int i=0;i<3;i++)
+    {
+        plannedSW2T[i]=s_roty2rm(targetM.Yaw)*stdLegPee2C.col(swingID[i])+3*D/4;
+        targetM.LegPee.col(swingID[i])=initM.BodyR*(R_t_2_b*plannedSW2T[i]+p_t_2_b);
+    }
+
+    targetM.BodyR=initM.BodyR*R_t_2_b*s_roty2rm(targetM.Yaw-initM.Yaw);
 }
-
 
 
 void StepPlanner::setInitConfig(const Matrix<double,3,6>& _initLegPee, const Vector3d & _initBodyPee, const Matrix3d& _initBodyR)
@@ -95,11 +127,11 @@ void StepPlanner::setTargetBodyP(const Vector3d& _targetBodyP)
 
 void StepPlanner::setInitBodyV(const Vector3d& _initBodyV)
 {
-    initM.COGVel=_initBodyV;
+    initM.COGV=_initBodyV;
 }
 void StepPlanner::setTargetBodyV(const Vector3d& _targetBodyV)
 {
-    targetM.COGVel=_targetBodyV;
+    targetM.COGV=_targetBodyV;
 }
 void StepPlanner::setStepHeight(const double H)
 {
@@ -139,36 +171,10 @@ int StepPlanner::getCount()
     return count;
 }
 
-void StepPlanner::parseVelocityCommand(const CommandPlanar & cmd)
-{
-    //planning in the absolute world ground coordinate system
-
-    targetM.COGVel=Vector3d(cmd.Vx,0,cmd.Vy);
-    targetM.Yaw=cmd.Yaw;
-    targetM.BodyPee=initM.BodyPee+0.5*(initM.COGVel+targetM.COGVel)*totalCount/1000;
-
-    Vector3d LCSorigin;
-    Matrix3d LCSR;
-    PlanGetLocalSupportCenter(initM.BodyR*robotFB.legPee2B,stanceID,LCSorigin,LCSR);
-
-    // plan target M
-    Matrix<double, 3, 6> stdLegPee2B;
-
-    stdLegPee2B << -0.3, -0.45, -0.3, 0.3, 0.45, 0.3,
-            -0.85, -0.85, -0.85, -0.85, -0.85, -0.85,
-            -0.65, 0, 0.65, -0.65, 0, 0.65;
-
-    targetM.BodyR=initM.BodyR*LCSR*s_roty2rm(targetM.Yaw-initM.Yaw);
-
-    targetM.BodyR=s_euler2rm(Vector3d(targetM.Yaw,0,0),"213");// target pitch and roll set to zero?
-}
-
 
 void StepPlanner::PlanUpdate(const Feedbacks& _fb)
 {
-
     robotFB=_fb;
-
     if (count == 0)
     {
         initM.Yaw=0;
@@ -180,16 +186,13 @@ void StepPlanner::PlanUpdate(const Feedbacks& _fb)
         for(int i=0;i<6;i++)
             initM.LegPee.col(i)=initM.BodyPee+initM.BodyR*robotFB.legPee2B.col(i);
 
-        initM.COGVel=s_roty2rm(-targetM.Yaw)*targetM.COGVel;//test this one
+        initM.COGV=s_roty2rm(-targetM.Yaw)*targetM.COGV;
         currentM=initM;
-
     }
-
     lastM=currentM;
-
     //count+=countPerPeriod;
-
 }
+
 void StepPlanner::PlanRefTrajGeneration()
 {
     if(count<=totalCount)
@@ -214,7 +217,7 @@ void StepPlanner::PlanRefTrajGeneration()
         //body
         currentM.BodyPee=PlanTrajEllipsoid(initM.BodyPee,targetM.BodyPee,0,count,totalCount);
         //or planned as cubic spline
-        currentM.BodyPee=PlanTrajCubic(initM.BodyPee, targetM.BodyPee, initM.COGVel,targetM.COGVel, count,totalCount);
+        currentM.BodyPee=PlanTrajCubic(initM.BodyPee, targetM.BodyPee, initM.BodyVee,targetM.BodyVee, count,totalCount);
 
         currentM.BodyR=PlanRbyQuatInterp(initM.BodyR,targetM.BodyR,count,totalCount);
     }
@@ -382,7 +385,29 @@ void PlanTrajP2Inf(const Vector3d& p0, const Vector3d& v0,const Vector3d& vdesir
     }
 
 }
-void PlanGetLocalSupportCenter(const Matrix<double,3,6>& legPee,int* stanceID,Vector3d& _LCSorigin, Matrix3d& _LCSR)
+
+void PlanGetSupportPlane(const Matrix<double,3,6>& legPee,int* stanceID,Vector4d& planeABCD)
+{
+    Vector3d p[3];
+    double l[3];
+    for(int i=0;i<3;i++)
+        p[i]=legPee.col(stanceID[i]);
+
+    planeABCD.block(0,0,3,1)=(p[2]-p[1]).cross(p[2]-p[0]);
+    planeABCD(3)=-planeABCD.block(0,0,3,1).dot(p[0]);
+    planeABCD=planeABCD/(planeABCD(1));
+
+    //Ax+By+Cz+D=0   B=1
+}
+
+void PlaneGetPointProjection(const Vector3d& p, const Vector4d& planeABCD,Vector3d& projP)
+{
+    projP(0)=p(0);
+    projP(2)=p(2);
+    projP(1)=-(p(0)*planeABCD(0)+p(2)*p(2)+p(3))/planeABCD(1);
+}
+
+void PlanGetT2B(const Matrix<double,3,6>& legPee,int* stanceID,Matrix3d & R_t_2_b,Vector3d& p_t_2_b )
 {
 
     Vector3d p[3];
@@ -394,7 +419,7 @@ void PlanGetLocalSupportCenter(const Matrix<double,3,6>& legPee,int* stanceID,Ve
     l[1]=(p[0]-p[2]).norm();
     l[2]=(p[1]-p[0]).norm();
 
-    _LCSorigin=(p[0]*l[0]+p[1]*l[1]+p[2]*l[2])/(l[0]+l[1]+l[2]);
+    p_t_2_b=(p[0]*l[0]+p[1]*l[1]+p[2]*l[2])/(l[0]+l[1]+l[2]);
 
     Vector3d x,y,z;
 
@@ -406,10 +431,9 @@ void PlanGetLocalSupportCenter(const Matrix<double,3,6>& legPee,int* stanceID,Ve
     z.normalized();
     x=z.cross(y);
     x.normalized();
-    _LCSR.row(0)=x;
-    _LCSR.row(1)=y;
-    _LCSR.row(2)=z;
+    R_t_2_b.row(0)=x;
+    R_t_2_b.row(1)=y;
+    R_t_2_b.row(2)=z;
 
 }
-
 
